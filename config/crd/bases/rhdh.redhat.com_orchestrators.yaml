@@ -40,209 +40,197 @@ spec:
             description: OrchestratorSpec defines the desired state of Orchestrator
             properties:
               argocd:
+                description: Configuration for ArgoCD. Optional
                 properties:
                   enabled:
+                    default: false
+                    description: Determines whether to install the ArgoCD plugin and
+                      create the orchestrator AppProject
                     type: boolean
                   namespace:
+                    description: |-
+                      Namespace where the ArgoCD operator is installed and watching for argoapp CR instances
+                      Ensure to add the Namespace if ArgoCD is installed
                     type: boolean
                 type: object
               orchestrator:
+                description: Configuration for Orchestrator. Optional
                 properties:
                   namespace:
+                    description: Namespace to run sonataflow's workflows
                     type: string
                   sonataFlowPlatform:
+                    description: Contains the pod resource configuration to be used
+                      for the data index and job services
                     properties:
                       resources:
+                        description: Contains the Requests and Limit of CPU and memory
+                          resources for the pod instance
                         properties:
                           limits:
+                            description: |-
+                              Describes the maximum amount of compute resources allowed.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                             properties:
                               cpu:
+                                default: 500m
+                                description: Defines the CPU resource limits
                                 type: string
                               memory:
+                                default: 1Gi
+                                description: Defines the memory resource limits
                                 type: string
                             type: object
                           requests:
+                            description: |-
+                              Describe the minimum amount of compute resources required.
+                              Requests cannot exceed Limits. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
                             properties:
                               cpu:
+                                default: 500m
+                                description: Defines the CPU resource limits
                                 type: string
                               memory:
+                                default: 1Gi
+                                description: Defines the memory resource limits
                                 type: string
                             type: object
                         type: object
                     type: object
+                required:
+                - namespace
                 type: object
               postgres:
+                description: |-
+                  Configuration for existing database instance
+                  Used by Data index and Job service
                 properties:
                   authSecret:
+                    description: PostgreSQL connection credentials details
                     properties:
                       name:
+                        description: Name of existing secret to use for PostgreSQL
+                          credentials.
                         type: string
                       passwordKey:
+                        description: Name of key in existing secret to use for PostgreSQL
+                          credentials.
                         type: string
                       userKey:
+                        description: Name of key in existing secret to use for PostgreSQL
+                          credentials.
                         type: string
+                    required:
+                    - name
+                    - passwordKey
+                    - userKey
                     type: object
                   database:
+                    description: Existing database instance used by data index and
+                      job service
                     type: string
                   serviceName:
+                    description: Name of the Postgres DB service to be used by platform
+                      services
                     type: string
                   serviceNamespace:
+                    description: Namespace of the Postgres DB service to be used by
+                      platform services
                     type: string
+                required:
+                - authSecret
+                - database
+                - serviceName
+                - serviceNamespace
                 type: object
-              rhdhOperator:
+              rhdh:
+                description: Configuration for RHDH (Backstage).
                 properties:
-                  catalogBranch:
+                  devMode:
+                    default: false
+                    description: |-
+                      DevMode determines whether to enable the guest provider in RHDH.
+                      This should be used for development purposes ONLY and should not be enabled in production.
+                      Defaults to false.
+                    type: boolean
+                  installOperator:
+                    default: false
+                    description: |-
+                      Determines whether the RHDH operator should be installed
+                      This determines the deployment of the RHDH instance.
+                      Defaults to false
+                    type: boolean
+                  name:
+                    description: Name of RHDH CR, whether existing or to be created
                     type: string
-                  enableGuestProvider:
-                    type: boolean
-                  enabled:
-                    type: boolean
-                  isReleaseCandidate:
-                    type: boolean
-                  secretRef:
-                    properties:
-                      argocd:
-                        properties:
-                          enabled:
-                            type: boolean
-                          namespace:
-                            type: string
-                          password:
-                            type: string
-                          url:
-                            type: string
-                          username:
-                            type: string
-                        type: object
-                      backstage:
-                        properties:
-                          backendSecret:
-                            type: string
-                        type: object
-                      github:
-                        properties:
-                          clientId:
-                            type: string
-                          clientSecret:
-                            type: string
-                          token:
-                            type: string
-                        type: object
-                      k8s:
-                        properties:
-                          clusterToken:
-                            type: string
-                          clusterUrl:
-                            type: string
-                        type: object
-                      name:
-                        type: string
-                      notificationsEmail:
-                        properties:
-                          hostname:
-                            type: string
-                          password:
-                            type: string
-                          username:
-                            type: string
-                        type: object
-                    type: object
-                  subscription:
-                    properties:
-                      channel:
-                        type: string
-                      installPlanApproval:
-                        type: string
-                      name:
-                        type: string
-                      namespace:
-                        type: string
-                      sourceName:
-                        type: string
-                      startingCSV:
-                        type: string
-                      targetNamespace:
-                        type: string
-                    type: object
-                type: object
-              rhdhPlugins:
-                properties:
-                  notificationsConfig:
-                    properties:
-                      enabled:
-                        type: boolean
-                      port:
-                        type: integer
-                      replyTo:
-                        type: string
-                      sender:
-                        type: string
-                    type: object
-                  npmRegistry:
+                  namespace:
+                    description: Namespace of RHDH Instance, whether existing or to
+                      be installed
                     type: string
                   plugins:
-                    additionalProperties:
-                      properties:
-                        integrity:
-                          type: string
-                        package:
-                          type: string
-                      type: object
+                    description: Configuration for RHDH Plugins.
+                    properties:
+                      notificationsEmail:
+                        description: Notification email plugin configuration
+                        properties:
+                          enabled:
+                            default: false
+                            description: |-
+                              Determines whether to install the Notifications Email plugin
+                              Requires setting the hostname and credentials in backstage secret
+                              The secret backstage-backend-auth-secret is created as pre-requisite
+                              See plugin configuration at https://github.com/backstage/backstage/blob/master/plugins/notifications-backend-module-email/config.d.ts
+                            type: boolean
+                          port:
+                            default: 587
+                            description: SMTP server port
+                            type: integer
+                          replyTo:
+                            default: ""
+                            description: Email address of the Recipient
+                            type: string
+                          sender:
+                            default: ""
+                            description: Email address of the Sender
+                            type: string
+                        type: object
                     type: object
-                  scope:
-                    type: string
+                required:
+                - name
+                - namespace
+                type: object
+              serverlessLogicOperator:
+                description: Configuration for ServerlessLogic. Optional
+                properties:
+                  enabled:
+                    default: true
+                    description: |-
+                      Determines whether to install the ServerlessLogic operator
+                      Defaults to true
+                    type: boolean
                 type: object
               serverlessOperator:
+                description: Configuration for Serverless (K-Native) Operator. Optional
                 properties:
                   enabled:
+                    default: true
+                    description: |-
+                      Determines whether to install the Serverless operator
+                      Defaults to true
                     type: boolean
-                  subscription:
-                    properties:
-                      channel:
-                        type: string
-                      installPlanApproval:
-                        type: string
-                      name:
-                        type: string
-                      namespace:
-                        type: string
-                      sourceName:
-                        type: string
-                      startingCSV:
-                        type: string
-                      targetNamespace:
-                        type: string
-                    type: object
-                type: object
-              sonataFlowOperator:
-                properties:
-                  enabled:
-                    type: boolean
-                  isReleaseCandidate:
-                    type: boolean
-                  subscription:
-                    properties:
-                      channel:
-                        type: string
-                      installPlanApproval:
-                        type: string
-                      name:
-                        type: string
-                      namespace:
-                        type: string
-                      sourceName:
-                        type: string
-                      startingCSV:
-                        type: string
-                      targetNamespace:
-                        type: string
-                    type: object
                 type: object
               tekton:
+                description: Configuration for Tekton. Optional
                 properties:
                   enabled:
+                    default: false
+                    description: Determines whether to create the Tekton pipeline
+                      resources. Defaults to false.
                     type: boolean
                 type: object
+            required:
+            - postgres
+            - rhdh
             type: object
           status:
             description: OrchestratorStatus defines the observed state of Orchestrator

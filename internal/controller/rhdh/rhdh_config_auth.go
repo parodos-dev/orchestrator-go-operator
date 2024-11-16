@@ -20,7 +20,6 @@ auth:
       dangerouslyAllowOutsideDevelopment: true
       userEntityRef: user:default/guest
     {{- end }}
-
 `
 
 type RHDHConfigAuth struct {

@@ -1,11 +1,11 @@
 /*
-Copyright 2024.
+Copyright 2024 Red Hat, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,7 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-var (
+const (
 	RunningPhase   OrchestratorPhase = "Running"
 	CompletedPhase OrchestratorPhase = "Completed"
 	FailedPhase    OrchestratorPhase = "Failed"
@@ -28,141 +28,174 @@ var (
 
 // OrchestratorSpec defines the desired state of Orchestrator
 type OrchestratorSpec struct {
-	SonataFlowOperator   SonataFlowOperator   `json:"sonataFlowOperator,omitempty"`
-	ServerlessOperator   ServerlessOperator   `json:"serverlessOperator,omitempty"`
-	RhdhOperator         RHDHOperator         `json:"rhdhOperator,omitempty"`
-	RhdhPlugins          RHDHPlugins          `json:"rhdhPlugins,omitempty"`
-	PostgresDB           Postgres             `json:"postgres,omitempty"`
-	OrchestratorPlatform OrchestratorPlatform `json:"orchestrator,omitempty"`
-	Tekton               Tekton               `json:"tekton,omitempty"`
-	ArgoCd               ArgoCD               `json:"argocd,omitempty"`
+	// Configuration for ServerlessLogic. Optional
+	ServerlessLogicOperator ServerlessLogicOperator `json:"serverlessLogicOperator,omitempty"`
+
+	// Configuration for Serverless (K-Native) Operator. Optional
+	ServerlessOperator ServerlessOperator `json:"serverlessOperator,omitempty"`
+
+	// Configuration for RHDH (Backstage).
+	// +kubebuilder:validation:Required
+	RHDHConfig RHDHConfig `json:"rhdh"`
+
+	// Configuration for existing database instance
+	// Used by Data index and Job service
+	// +kubebuilder:validation:Required
+	PostgresDB Postgres `json:"postgres"`
+
+	// Configuration for Orchestrator. Optional
+	OrchestratorConfig OrchestratorConfig `json:"orchestrator,omitempty"`
+
+	// Configuration for Tekton. Optional
+	Tekton Tekton `json:"tekton,omitempty"`
+
+	// Configuration for ArgoCD. Optional
+	ArgoCd ArgoCD `json:"argocd,omitempty"`
 }
 
-type Subscription struct {
-	Namespace           string `json:"namespace,omitempty"`
-	Channel             string `json:"channel,omitempty"`
-	InstallPlanApproval string `json:"installPlanApproval,omitempty"`
-	Name                string `json:"name,omitempty"`
-	SourceName          string `json:"sourceName,omitempty"`
-	StartingCSV         string `json:"startingCSV,omitempty"`
-	TargetNamespace     string `json:"targetNamespace,omitempty"`
-}
-
-type SonataFlowOperator struct {
-	IsReleaseCandidate bool         `json:"isReleaseCandidate,omitempty"`
-	Enabled            bool         `json:"enabled,omitempty"`
-	Subscription       Subscription `json:"subscription,omitempty"`
+type ServerlessLogicOperator struct {
+	// Determines whether to install the ServerlessLogic operator
+	// Defaults to true
+	// +kubebuilder:default=true
+	Enabled bool `json:"enabled,omitempty"`
 }
 
 type ServerlessOperator struct {
-	Enabled      bool         `json:"enabled,omitempty"`
-	Subscription Subscription `json:"subscription,omitempty"`
+	// Determines whether to install the Serverless operator
+	// Defaults to true
+	// +kubebuilder:default=true
+	Enabled bool `json:"enabled,omitempty"`
 }
 
-type BackstageSecret struct {
-	BackendSecret string `json:"backendSecret,omitempty"`
-}
+type RHDHConfig struct {
+	// Name of RHDH CR, whether existing or to be created
+	// +kubebuilder:validation:Required
+	RHDHName string `json:"name"`
 
-type ClusterTokenUrl struct {
-	ClusterToken string `json:"clusterToken,omitempty"`
-	ClusterUrl   string `json:"clusterUrl,omitempty"`
-}
+	// Namespace of RHDH Instance, whether existing or to be installed
+	// +kubebuilder:validation:Required
+	RHDHNamespace string `json:"namespace"`
 
-type GithubBS struct {
-	Token        string `json:"token,omitempty"`
-	ClientID     string `json:"clientId,omitempty"`
-	ClientSecret string `json:"clientSecret,omitempty"`
-}
+	// Determines whether the RHDH operator should be installed
+	// This determines the deployment of the RHDH instance.
+	// Defaults to false
+	// +kubebuilder:default=false
+	InstallOperator bool `json:"installOperator,omitempty"`
 
-type ArgoCDBS struct {
-	Enabled   bool   `json:"enabled,omitempty"`
-	Namespace string `json:"namespace,omitempty"`
-	Url       string `json:"url,omitempty"`
-	Username  string `json:"username,omitempty"`
-	Password  string `json:"password,omitempty"`
-}
+	// DevMode determines whether to enable the guest provider in RHDH.
+	// This should be used for development purposes ONLY and should not be enabled in production.
+	// Defaults to false.
+	// +kubebuilder:default=false
+	DevMode bool `json:"devMode,omitempty"`
 
-type NotificationEmailBS struct {
-	Hostname string `json:"hostname,omitempty"`
-	Username string `json:"username,omitempty"`
-	Password string `json:"password,omitempty"`
-}
-
-type SecretRefBS struct {
-	Name               string              `json:"name,omitempty"`
-	Backstage          BackstageSecret     `json:"backstage,omitempty"`
-	Github             GithubBS            `json:"github,omitempty"`
-	ClusterTokenUrl    ClusterTokenUrl     `json:"k8s,omitempty"`
-	ArgoCD             ArgoCDBS            `json:"argocd,omitempty"`
-	NotificationsEmail NotificationEmailBS `json:"notificationsEmail,omitempty"`
-}
-
-type RHDHOperator struct {
-	IsReleaseCandidate  bool         `json:"isReleaseCandidate,omitempty"`
-	Enabled             bool         `json:"enabled,omitempty"`
-	EnableGuestProvider bool         `json:"enableGuestProvider,omitempty"`
-	CatalogBranch       string       `json:"catalogBranch,omitempty"`
-	Subscription        Subscription `json:"subscription,omitempty"`
-	SecretRef           SecretRefBS  `json:"secretRef,omitempty"`
-}
-
-type PluginDetails struct {
-	Package   string `json:"package,omitempty"`
-	Integrity string `json:"integrity,omitempty"`
-}
-
-type NotificationConfig struct {
-	Enabled   bool   `json:"enabled,omitempty"`
-	Port      int    `json:"port,omitempty"`
-	Sender    string `json:"sender,omitempty"`
-	Recipient string `json:"replyTo,omitempty"`
+	// Configuration for RHDH Plugins.
+	RHDHPlugins RHDHPlugins `json:"plugins,omitempty"`
 }
 
 type RHDHPlugins struct {
-	NpmRegistry         string                   `json:"npmRegistry,omitempty"`
-	Scope               string                   `json:"scope,omitempty"`
-	Plugins             map[string]PluginDetails `json:"plugins,omitempty"`
-	NotificationsConfig NotificationConfig       `json:"notificationsConfig,omitempty"`
+	// Notification email plugin configuration
+	NotificationsConfig NotificationConfig `json:"notificationsEmail,omitempty"`
+}
+
+type NotificationConfig struct {
+	// Determines whether to install the Notifications Email plugin
+	// Requires setting the hostname and credentials in backstage secret
+	// The secret backstage-backend-auth-secret is created as pre-requisite
+	// See plugin configuration at https://github.com/backstage/backstage/blob/master/plugins/notifications-backend-module-email/config.d.ts
+	// +kubebuilder:default=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// SMTP server port
+	// +kubebuilder:default=587
+	Port int `json:"port,omitempty"`
+
+	// Email address of the Sender
+	// +kubebuilder:default=""
+	Sender string `json:"sender,omitempty"`
+
+	// Email address of the Recipient
+	// +kubebuilder:default=""
+	Recipient string `json:"replyTo,omitempty"`
 }
 
 type Postgres struct {
-	ServiceName      string             `json:"serviceName,omitempty"`
-	ServiceNameSpace string             `json:"serviceNamespace,omitempty"`
-	AuthSecret       PostgresAuthSecret `json:"authSecret,omitempty"`
-	DatabaseName     string             `json:"database,omitempty"`
+	// Name of the Postgres DB service to be used by platform services
+	// +kubebuilder:validation:Required
+	ServiceName string `json:"serviceName"`
+
+	// Namespace of the Postgres DB service to be used by platform services
+	// +kubebuilder:validation:Required
+	ServiceNameSpace string `json:"serviceNamespace"`
+
+	// PostgreSQL connection credentials details
+	// +kubebuilder:validation:Required
+	AuthSecret PostgresAuthSecret `json:"authSecret"`
+
+	// Existing database instance used by data index and job service
+	// +kubebuilder:validation:Required
+	DatabaseName string `json:"database"`
 }
 
 type PostgresAuthSecret struct {
-	SecretName  string `json:"name,omitempty"`
-	UserKey     string `json:"userKey,omitempty"`
-	PasswordKey string `json:"passwordKey,omitempty"`
+	// Name of existing secret to use for PostgreSQL credentials.
+	// +kubebuilder:validation:Required
+	SecretName string `json:"name"`
+
+	// Name of key in existing secret to use for PostgreSQL credentials.
+	// +kubebuilder:validation:Required
+	UserKey string `json:"userKey"`
+
+	// Name of key in existing secret to use for PostgreSQL credentials.
+	// +kubebuilder:validation:Required
+	PasswordKey string `json:"passwordKey"`
 }
 
-type OrchestratorPlatform struct {
-	Namespace          string             `json:"namespace,omitempty"`
+type OrchestratorConfig struct {
+	// Namespace to run sonataflow's workflows
+	// +kubebuilder:validation:Required
+	Namespace string `json:"namespace"`
+
+	// Contains the pod resource configuration to be used for the data index and job services
 	SonataFlowPlatform SonataFlowPlatform `json:"sonataFlowPlatform,omitempty"`
 }
 
 type SonataFlowPlatform struct {
+	// Contains the Requests and Limit of CPU and memory resources for the pod instance
 	Resources Resource `json:"resources,omitempty"`
 }
 
 type Resource struct {
+	// Describe the minimum amount of compute resources required.
+	// Requests cannot exceed Limits. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
 	Requests MemoryCpu `json:"requests,omitempty"`
-	Limits   MemoryCpu `json:"limits,omitempty"`
+	// Describes the maximum amount of compute resources allowed.
+	// More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+	Limits MemoryCpu `json:"limits,omitempty"`
 }
 
 type MemoryCpu struct {
+	// Defines the memory resource limits
+	// +kubebuilder:default="1Gi"
 	Memory string `json:"memory,omitempty"`
-	Cpu    string `json:"cpu,omitempty"`
+
+	// Defines the CPU resource limits
+	// +kubebuilder:default="500m"
+	Cpu string `json:"cpu,omitempty"`
 }
 
 type Tekton struct {
+	// Determines whether to create the Tekton pipeline resources. Defaults to false.
+	// +kubebuilder:default=false
 	Enabled bool `json:"enabled,omitempty"`
 }
 
 type ArgoCD struct {
-	Enabled   bool `json:"enabled,omitempty"`
+	// Determines whether to install the ArgoCD plugin and create the orchestrator AppProject
+	// +kubebuilder:default=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Namespace where the ArgoCD operator is installed and watching for argoapp CR instances
+	// Ensure to add the Namespace if ArgoCD is installed
 	Namespace bool `json:"namespace,omitempty"`
 }
 

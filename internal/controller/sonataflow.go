@@ -26,20 +26,98 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
-	SonataFlowAPIVersion             = "sonataflow.org/v1alpha08"
-	SonataFlowPlatformCRName         = "sonataflow-platform"
-	SonataFlowNamespace              = "sonataflow-infra"
-	SonataFlowPlatformKind           = "SonataFlowPlatform"
-	SonataFlowClusterPlatformKind    = "SonataFlowClusterPlatform"
-	SonataFlowClusterPlatformCRName  = "cluster-platform"
-	SonataFlowClusterPlatformCRDName = "sonataflowclusterplatforms.sonataflow.org"
-	SonataFlowSubscriptionName       = "logic-operator-rhel8"
+	SonataFlowAPIVersion                   = "sonataflow.org/v1alpha08"
+	SonataFlowPlatformCRName               = "sonataflow-platform"
+	SonataFlowNamespace                    = "sonataflow-infra"
+	SonataFlowPlatformKind                 = "SonataFlowPlatform"
+	SonataFlowClusterPlatformKind          = "SonataFlowClusterPlatform"
+	SonataFlowClusterPlatformCRName        = "cluster-platform"
+	SonataFlowClusterPlatformCRDName       = "sonataflowclusterplatforms.sonataflow.org"
+	ServerlessLogicSubscriptionChannel     = "alpha"
+	ServerlessLogicOperatorNamespace       = "openshift-serverless-logic"
+	ServerlessLogicSubscriptionName        = "logic-operator-rhel8"
+	ServerlessLogicSubscriptionStartingCSV = "logic-operator-rhel8.v1.34.0"
 )
+
+func handleOSLOperatorInstallation(ctx context.Context, client client.Client, olmClientSet olmclientset.Clientset) error {
+	sfLogger := log.FromContext(ctx)
+
+	// create namespace for operator
+	if _, err := kube.CheckNamespaceExist(ctx, client, ServerlessLogicOperatorNamespace); err != nil {
+		if apierrors.IsNotFound(err) {
+			if err := kube.CreateNamespace(ctx, client, ServerlessLogicOperatorNamespace); err != nil {
+				sfLogger.Error(err, "Error occurred when creating namespace", "NS", ServerlessLogicOperatorNamespace)
+				return nil
+			}
+		}
+		sfLogger.Error(err, "Error occurred when checking namespace exist", "NS", ServerlessLogicOperatorNamespace)
+		return err
+	}
+
+	// check if subscription exist
+	oslSubscription := kube.CreateSubscriptionObject(
+		ServerlessLogicSubscriptionName,
+		ServerlessLogicOperatorNamespace,
+		ServerlessLogicSubscriptionChannel,
+		ServerlessLogicSubscriptionStartingCSV)
+
+	subscriptionExists, existingSubscription, err := kube.CheckSubscriptionExists(ctx, olmClientSet, oslSubscription)
+	if err != nil {
+		sfLogger.Error(err, "Error occurred when checking subscription exists", "SubscriptionName", ServerlessLogicSubscriptionName)
+		return err
+	}
+	if !subscriptionExists {
+		err := kube.InstallOperatorViaSubscription(
+			ctx, client, olmClientSet,
+			kube.OpenshiftServerlessOperatorGroupName,
+			oslSubscription)
+		if err != nil {
+			sfLogger.Error(err, "Error occurred when installing operator", "SubscriptionName", ServerlessLogicSubscriptionName)
+			return err
+		}
+		sfLogger.Info("Operator successfully installed via Subscription", "SubscriptionName", ServerlessLogicSubscriptionName)
+	}
+
+	if subscriptionExists {
+		// Compare the current and desired state
+		if !reflect.DeepEqual(existingSubscription.Spec, oslSubscription.Spec) {
+			// Set owner reference for proper garbage collection
+			//if err := controllerutil.SetControllerReference(&orchestrator, oslSubscription, r.Scheme); err != nil {
+			//	return err
+			//}
+
+			// Update the existing subscription with the new Spec
+			existingSubscription.Spec = oslSubscription.Spec
+			if err := client.Update(ctx, existingSubscription); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func handleServerlessLogicCR(ctx context.Context, client client.Client, orchestrator *orchestratorv1alpha1.Orchestrator) error {
+	sfLogger := log.FromContext(ctx)
+	sfLogger.Info("Handling ServerlessLogic CR...")
+
+	if err := handleSonataFlowClusterCR(ctx, client, SonataFlowClusterPlatformCRName); err != nil {
+		sfLogger.Error(err, "Error occurred when creating SonataFlowClusterCR", "CR-Name", SonataFlowClusterPlatformCRName)
+		return err
+
+	}
+	// create sonataflowplatform  CR
+	if err := handleSonataFlowPlatformCR(ctx, client, orchestrator, SonataFlowClusterPlatformCRName); err != nil {
+		sfLogger.Error(err, "Error occurred when creating SonataFlowPlatform", "CR-Name", SonataFlowClusterPlatformCRName)
+		return err
+	}
+	return nil
+}
 
 func getSonataFlowPersistence(orchestrator *orchestratorv1alpha1.Orchestrator) *sonataapi.PersistenceOptionsSpec {
 	return &sonataapi.PersistenceOptionsSpec{
@@ -167,15 +245,15 @@ func handleSonataFlowPlatformCR(
 func getSonataFlowPlatformSpec(orchestrator *orchestratorv1alpha1.Orchestrator) sonataapi.SonataFlowPlatformSpec {
 	limitResourceMap := make(map[corev1.ResourceName]resource.Quantity)
 
-	cpuQuantity, _ := resource.ParseQuantity(orchestrator.Spec.OrchestratorPlatform.SonataFlowPlatform.Resources.Limits.Cpu)
-	memoryQuantity, _ := resource.ParseQuantity(orchestrator.Spec.OrchestratorPlatform.SonataFlowPlatform.Resources.Limits.Memory)
+	cpuQuantity, _ := resource.ParseQuantity(orchestrator.Spec.OrchestratorConfig.SonataFlowPlatform.Resources.Limits.Cpu)
+	memoryQuantity, _ := resource.ParseQuantity(orchestrator.Spec.OrchestratorConfig.SonataFlowPlatform.Resources.Limits.Memory)
 	limitResourceMap[corev1.ResourceCPU] = cpuQuantity
 	limitResourceMap[corev1.ResourceMemory] = memoryQuantity
 	//logger.Info("Limit Map", "Map", limitResourceMap)
 
 	requestResourceMap := make(map[corev1.ResourceName]resource.Quantity)
-	requestCpuQuantity, _ := resource.ParseQuantity(orchestrator.Spec.OrchestratorPlatform.SonataFlowPlatform.Resources.Requests.Cpu)
-	requestMemoryQuantity, _ := resource.ParseQuantity(orchestrator.Spec.OrchestratorPlatform.SonataFlowPlatform.Resources.Requests.Memory)
+	requestCpuQuantity, _ := resource.ParseQuantity(orchestrator.Spec.OrchestratorConfig.SonataFlowPlatform.Resources.Requests.Cpu)
+	requestMemoryQuantity, _ := resource.ParseQuantity(orchestrator.Spec.OrchestratorConfig.SonataFlowPlatform.Resources.Requests.Memory)
 	requestResourceMap[corev1.ResourceCPU] = requestCpuQuantity
 	requestResourceMap[corev1.ResourceMemory] = requestMemoryQuantity
 	//logger.Info("Request Map", "Map", requestResourceMap)
@@ -208,8 +286,14 @@ func handleSonataFlowCleanUp(ctx context.Context, client client.Client, olmClien
 		logger.Error(err, "Error occurred when deleting namespace", "NS", KnativeEventingNamespacedName)
 		return err
 	}
-	if err := kube.CleanUpSubscriptionAndCSV(ctx, olmClientSet, SonataFlowSubscriptionName, SonataFlowNamespace); err != nil {
-		logger.Error(err, "Error occurred when deleting Subscription and CSV", "Subscription", SonataFlowSubscriptionName)
+	oslSubscription := kube.CreateSubscriptionObject(
+		ServerlessLogicSubscriptionName,
+		ServerlessLogicOperatorNamespace,
+		ServerlessLogicSubscriptionChannel,
+		ServerlessLogicSubscriptionStartingCSV)
+
+	if err := kube.CleanUpSubscriptionAndCSV(ctx, olmClientSet, oslSubscription); err != nil {
+		logger.Error(err, "Error occurred when deleting Subscription and CSV", "Subscription", ServerlessLogicSubscriptionName)
 		return err
 	}
 	// remove all CRDs, optional (ensure all CRs and namespace have been removed first)

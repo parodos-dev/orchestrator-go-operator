@@ -22,18 +22,20 @@ import (
 	"github.com/operator-framework/api/pkg/operators/v1alpha1"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	olmclientset "github.com/operator-framework/operator-lifecycle-manager/pkg/api/client/clientset/versioned"
-	orchestratorv1alpha1 "github.com/parodos-dev/orchestrator-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
 	CatalogSourceNamespace               = "openshift-marketplace"
+	CatalogSourceName                    = "redhat-operators"
 	OpenshiftServerlessOperatorGroupName = "serverless-operator-group"
 	ServerlessOperatorGroupName          = "serverless-operator-group"
 	CreatedByLabelKey                    = "created-by"
@@ -68,7 +70,7 @@ func InstallOperatorViaSubscription(
 	ctx context.Context, client client.Client,
 	olmClientSet olmclientset.Clientset,
 	operatorGroupName string,
-	subscription orchestratorv1alpha1.Subscription) error {
+	subscription *v1alpha1.Subscription) error {
 
 	logger := log.FromContext(ctx)
 	subscriptionName := subscription.Name
@@ -82,10 +84,9 @@ func InstallOperatorViaSubscription(
 		logger.Error(err, "Failed to get operator group resource", "OperatorGroup", operatorGroupName)
 	}
 	// install subscription
-	subscriptionObject := createSubscriptionObject(subscriptionName, namespace, subscription)
 	installedSubscription, err := olmClientSet.OperatorsV1alpha1().
 		Subscriptions(namespace).
-		Create(ctx, subscriptionObject, metav1.CreateOptions{})
+		Create(ctx, subscription, metav1.CreateOptions{})
 
 	if err != nil {
 		logger.Error(err, "Error occurred while creating Subscription", "SubscriptionName", subscriptionName)
@@ -125,29 +126,26 @@ func getOperatorGroup(ctx context.Context, client client.Client,
 	sfog := &operatorsv1.OperatorGroup{
 		ObjectMeta: metav1.ObjectMeta{Name: operatorGroupName, Namespace: namespace},
 	}
-	err = client.Create(ctx, sfog)
-	if err != nil {
+	if err = client.Create(ctx, sfog); err != nil {
 		logger.Error(err, "Error occurred when creating OperatorGroup resource", "Namespace", namespace)
 		return err
 	}
 	return nil
 }
 
-func createSubscriptionObject(
-	subscriptionName, namespace string,
-	subscription orchestratorv1alpha1.Subscription) *v1alpha1.Subscription {
+func CreateSubscriptionObject(subscriptionName, namespace, channel, startingCSV string) *v1alpha1.Subscription {
 	logger := log.Log.WithName("subscriptionObject")
 	logger.Info("Creating subscription object")
 
 	subscriptionObject := &v1alpha1.Subscription{
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: subscriptionName},
 		Spec: &v1alpha1.SubscriptionSpec{
-			Channel:                subscription.Channel,
-			InstallPlanApproval:    v1alpha1.Approval(subscription.InstallPlanApproval),
-			CatalogSource:          subscription.SourceName,
-			StartingCSV:            subscription.StartingCSV,
+			Channel:                channel,
+			InstallPlanApproval:    v1alpha1.ApprovalAutomatic,
+			CatalogSource:          CatalogSourceName,
+			StartingCSV:            startingCSV,
 			CatalogSourceNamespace: CatalogSourceNamespace,
-			Package:                subscription.Name,
+			Package:                subscriptionName,
 		},
 	}
 	return subscriptionObject
@@ -155,8 +153,11 @@ func createSubscriptionObject(
 
 func CheckSubscriptionExists(
 	ctx context.Context, olmClientSet olmclientset.Clientset,
-	namespace, subscriptionName string) (bool, *v1alpha1.Subscription, error) {
+	existingSubscription *v1alpha1.Subscription) (bool, *v1alpha1.Subscription, error) {
 	logger := log.FromContext(ctx)
+
+	namespace := existingSubscription.Namespace
+	subscriptionName := existingSubscription.Name
 
 	subscription, err := olmClientSet.OperatorsV1alpha1().Subscriptions(namespace).Get(ctx, subscriptionName, metav1.GetOptions{})
 	if err != nil {
@@ -202,10 +203,13 @@ func CleanUpNamespace(ctx context.Context, namespaceName string, client client.C
 	return nil
 }
 
-func CleanUpSubscriptionAndCSV(ctx context.Context, olmClientSet olmclientset.Clientset, subscriptionName, namespace string) error {
+func CleanUpSubscriptionAndCSV(ctx context.Context, olmClientSet olmclientset.Clientset, subscription *v1alpha1.Subscription) error {
 	logger := log.FromContext(ctx)
-	// check if subscription exists using olm client
-	subscriptionExists, subscription, err := CheckSubscriptionExists(ctx, olmClientSet, namespace, subscriptionName)
+
+	subscriptionName := subscription.Name
+	subscriptionNamespace := subscription.Namespace
+
+	subscriptionExists, _, err := CheckSubscriptionExists(ctx, olmClientSet, subscription)
 	if err != nil {
 		logger.Error(err, "Error occurred when checking subscription exists", "SubscriptionName", subscriptionName)
 		return err
@@ -215,16 +219,16 @@ func CleanUpSubscriptionAndCSV(ctx context.Context, olmClientSet olmclientset.Cl
 		csvName := subscription.Status.InstalledCSV
 
 		// deleting subscription resource
-		err = olmClientSet.OperatorsV1alpha1().Subscriptions(namespace).Delete(ctx, subscriptionName, metav1.DeleteOptions{})
+		err = olmClientSet.OperatorsV1alpha1().Subscriptions(subscriptionNamespace).Delete(ctx, subscriptionName, metav1.DeleteOptions{})
 		if err != nil {
-			logger.Error(err, "Error occurred while deleting Subscription", "SubscriptionName", subscriptionName, "Namespace", namespace)
+			logger.Error(err, "Error occurred while deleting Subscription", "SubscriptionName", subscriptionName, "Namespace", subscriptionNamespace)
 			//return ctrl.Result{RequeueAfter: 5 * time.Minute}, err
 			return err
 		}
 		logger.Info("Successfully deleted Subscription: %s", subscriptionName)
 
 		// cleanup csv
-		csv, err := olmClientSet.OperatorsV1alpha1().ClusterServiceVersions(namespace).Get(ctx, csvName, metav1.GetOptions{})
+		csv, err := olmClientSet.OperatorsV1alpha1().ClusterServiceVersions(subscriptionNamespace).Get(ctx, csvName, metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				logger.Info("CSV resource not found", "CSV", csvName)

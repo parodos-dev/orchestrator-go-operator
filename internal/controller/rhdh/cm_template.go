@@ -8,17 +8,18 @@ import (
 )
 
 func ConfigMapTemplateFactory(
-	cmTemplateType string, clusterDomain string,
-	operator v1alpha1.RHDHOperator, plugins v1alpha1.RHDHPlugins) (string, error) {
+	cmTemplateType, clusterDomain, wfNamespace string,
+	argoCDEnabled, tektonEnabled bool,
+	rhdhConfig v1alpha1.RHDHConfig) (string, error) {
 	switch cmTemplateType {
 	case AppConfigRHDHName:
 		configData := RHDHConfig{
-			TargetNamespace: operator.Subscription.TargetNamespace,
-			ArgoCDUsername:  operator.SecretRef.ArgoCD.Username,
-			ArgoCDPassword:  operator.SecretRef.ArgoCD.Password,
-			ArgoCDUrl:       operator.SecretRef.ArgoCD.Url,
-			ArgoCDEnabled:   operator.SecretRef.ArgoCD.Enabled,
-			BackendSecret:   operator.SecretRef.Backstage.BackendSecret,
+			TargetNamespace: rhdhConfig.RHDHNamespace,
+			ArgoCDUsername:  ArgoCDUsername,
+			ArgoCDPassword:  ArgoCDPassword,
+			ArgoCDUrl:       ArgoCDUrl,
+			ArgoCDEnabled:   argoCDEnabled,
+			BackendSecret:   BackendSecretKey,
 			ClusterDomain:   clusterDomain,
 		}
 		formattedConfig, err := parseConfigTemplate(RHDHConfigTempl, configData)
@@ -28,11 +29,11 @@ func ConfigMapTemplateFactory(
 		return formattedConfig, nil
 	case AppConfigRHDHAuthName:
 		configData := RHDHConfigAuth{
-			GitHubToken:         operator.SecretRef.Github.Token,
+			GitHubToken:         GitHubToken,
 			Environment:         "development",
-			GitHubClientId:      operator.SecretRef.Github.ClientID,
-			GitHubClientSecret:  operator.SecretRef.Github.ClientSecret,
-			EnableGuestProvider: operator.EnableGuestProvider,
+			GitHubClientId:      GitHubClientID,
+			GitHubClientSecret:  GitHubClientSecret,
+			EnableGuestProvider: rhdhConfig.DevMode,
 		}
 		formattedConfig, err := parseConfigTemplate(RHDHAuthTempl, configData)
 		if err != nil {
@@ -41,8 +42,8 @@ func ConfigMapTemplateFactory(
 		return formattedConfig, nil
 	case AppConfigRHDHCatalogName:
 		configData := RHDHConfigCatalog{
-			EnableGuestProvider: operator.EnableGuestProvider,
-			CatalogBranch:       operator.CatalogBranch,
+			EnableGuestProvider: rhdhConfig.DevMode,
+			CatalogBranch:       CatalogBranch,
 		}
 		formattedConfig, err := parseConfigTemplate(RHDHCatalogTempl, configData)
 		if err != nil {
@@ -52,18 +53,18 @@ func ConfigMapTemplateFactory(
 	case AppConfigRHDHDynamicPluginName:
 		pluginsMap := getPlugins()
 		configData := RHDHDynamicPluginConfig{
-			K8ClusterToken:               operator.SecretRef.ClusterTokenUrl.ClusterToken,
-			K8ClusterUrl:                 operator.SecretRef.ClusterTokenUrl.ClusterUrl,
-			TektonEnabled:                false,
-			ArgoCDEnabled:                operator.SecretRef.ArgoCD.Enabled,
-			ArgoCDUrl:                    operator.SecretRef.ArgoCD.Url,
-			ArgoCDUsername:               operator.SecretRef.ArgoCD.Username,
-			ArgoCDPassword:               operator.SecretRef.ArgoCD.Password,
+			K8ClusterToken:               ClusterUrl,
+			K8ClusterUrl:                 ClusterToken,
+			TektonEnabled:                tektonEnabled,
+			ArgoCDEnabled:                argoCDEnabled,
+			ArgoCDUrl:                    ArgoCDUrl,
+			ArgoCDUsername:               ArgoCDUsername,
+			ArgoCDPassword:               ArgoCDPassword,
 			OrchestratorBackendPackage:   pluginsMap[OrchestratorBackend].Package,
 			OrchestratorBackendIntegrity: pluginsMap[OrchestratorBackend].Integrity,
 			OrchestratorPackage:          pluginsMap[Orchestrator].Package,
 			OrchestratorIntegrity:        pluginsMap[Orchestrator].Integrity,
-			Scope:                        plugins.Scope,
+			Scope:                        Scope,
 			NotificationPackage:          pluginsMap[Notification].Package,
 			NotificationIntegrity:        pluginsMap[Notification].Integrity,
 			SignalsPackage:               pluginsMap[Signals].Package,
@@ -74,14 +75,14 @@ func ConfigMapTemplateFactory(
 			NotificationBackendIntegrity: pluginsMap[NotificationBackend].Integrity,
 			NotificationEmailPackage:     pluginsMap[NotificationsEmail].Package,
 			NotificationEmailIntegrity:   pluginsMap[NotificationsEmail].Integrity,
-			NotificationEmailEnabled:     plugins.NotificationsConfig.Enabled,
-			NotificationEmailHostname:    operator.SecretRef.NotificationsEmail.Hostname,
-			NotificationEmailUsername:    operator.SecretRef.NotificationsEmail.Username,
-			NotificationEmailPassword:    operator.SecretRef.NotificationsEmail.Password,
-			NotificationEmailSender:      plugins.NotificationsConfig.Sender,
-			NotificationEmailReplyTo:     plugins.NotificationsConfig.Recipient,
-			NotificationEmailPort:        plugins.NotificationsConfig.Port,
-			WorkflowNamespace:            "sonataflow-infra",
+			NotificationEmailEnabled:     rhdhConfig.RHDHPlugins.NotificationsConfig.Enabled,
+			NotificationEmailHostname:    NotificationHostname,
+			NotificationEmailUsername:    NotificationUsername,
+			NotificationEmailPassword:    NotificationPassword,
+			NotificationEmailSender:      rhdhConfig.RHDHPlugins.NotificationsConfig.Sender,
+			NotificationEmailReplyTo:     rhdhConfig.RHDHPlugins.NotificationsConfig.Recipient,
+			NotificationEmailPort:        rhdhConfig.RHDHPlugins.NotificationsConfig.Port,
+			WorkflowNamespace:            wfNamespace,
 		}
 		formattedConfig, err := parseConfigTemplate(RHDHDynamicPluginTempl, configData)
 		if err != nil {
